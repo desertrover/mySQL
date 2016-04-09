@@ -1,0 +1,83 @@
+/* Performing ETL on a CSV table going into mySQL:
+
+"Inpatient Prospective Payment System (IPPS) Provider Summary for the Top 100 Diagnosis-Related Groups (DRG) - FY2011"
+https://data.cms.gov/Medicare/Inpatient-Prospective-Payment-System-IPPS-Provider/97k6-zzx3
+
+Resolved Issues:
+  (1) stripping "$" in spend amounts
+  (2) quotes breaking import; added ENCLODED BY '"'
+  (3) turning off/on safe update mode for spend ETL
+
+*/
+
+#Create the database
+CREATE DATABASE federal_medical;
+USE federal_medical;
+
+
+# Create the table for ETL
+CREATE TABLE provider_etl (
+	drg TEXT NOT NULL,
+	provider_id INT NOT NULL,
+	provider_name TEXT NOT NULL,
+	provider_address TEXT NOT NULL,
+	provider_city TEXT NOT NULL,
+	provider_state TEXT NOT NULL,
+	provider_zip NUMERIC(5) NOT NULL,
+	provider_region TEXT NOT NULL,
+	discharges INT NOT NULL,
+	average_charges TEXT NOT NULL, # load amounts as string for now; will transform in mySQL
+	average_payments TEXT NOT NULL, # load amounts as string for now; will transform in mySQL
+	average_medicare_payments TEXT NOT NULL # load amounts as string for now; will transform in mySQL
+);
+	
+
+# Import CSV into ETL table
+LOAD DATA INFILE '/tmp/provider.csv'
+INTO TABLE provider_etl
+FIELDS TERMINATED BY ',' 
+ENCLOSED BY '"'
+LINES TERMINATED BY '\n'
+IGNORE 1 ROWS;
+
+#switching safe updates off
+SET SQL_SAFE_UPDATES = 0;
+
+# Strip $ from average_charges
+SELECT REPLACE(average_charges,'$','') AS average_charges FROM provider_etl;
+UPDATE provider_etl SET average_charges = REPLACE(average_charges, '$', '');
+
+# Strip $ from average_payments
+SELECT REPLACE(average_payments,'$','') AS average_payments FROM provider_etl;
+UPDATE provider_etl SET average_payments = REPLACE(average_payments, '$', '');
+
+# Strip $ from average_medicare_payments
+SELECT REPLACE(average_medicare_payments,'$','') AS average_medicare_payments FROM provider_etl;
+UPDATE provider_etl SET average_medicare_payments = REPLACE(average_medicare_payments, '$', '');
+
+#switching safe updates back onprovider
+SET SQL_SAFE_UPDATES = 1;
+
+
+# Create the schema for the incoming table
+CREATE TABLE provider (
+	drg TEXT NOT NULL,
+	provider_id INT NOT NULL,
+	provider_name TEXT NOT NULL,
+	provider_address TEXT NOT NULL,
+	provider_city TEXT NOT NULL,
+	provider_state TEXT NOT NULL,
+	provider_zip NUMERIC(5) NOT NULL,
+	provider_region TEXT NOT NULL,
+	discharges INT NOT NULL,
+	average_charges NUMERIC(15,2) NOT NULL,
+	average_payments NUMERIC(15,2) NOT NULL,
+	average_medicare_payments NUMERIC(15,2) NOT NULL);
+	
+#copy data from ETL table
+INSERT provider SELECT * FROM provider_etl;
+
+#drop ETL table
+DROP TABLE provider_etl ;
+
+
